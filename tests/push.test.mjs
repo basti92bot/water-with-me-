@@ -8,7 +8,7 @@ const require=createRequire(import.meta.url),webpush=require('web-push'),ece=cre
 for(const url of ['https://web.push.apple.com/abc','https://updates.push.services.mozilla.com/abc','https://fcm.googleapis.com/fcm/send/abc'])assert(allowedEndpoint(url));
 for(const url of ['http://web.push.apple.com/abc','https://web.push.apple.com.evil.test/abc','https://user:password@web.push.apple.com/abc','https://web.push.apple.com:444/abc','https://127.0.0.1/abc'])assert(!allowedEndpoint(url));
 const receiver=crypto.createECDH('prime256v1');receiver.generateKeys();const auth=crypto.randomBytes(16),vapid={...webpush.generateVAPIDKeys(),subject:'https://basti92bot.github.io/water-with-me-/'};
-const payload={title:'Water With Me 💧',body:'Test A hat gerade 500 ml Monster Energy getrunken.\n📍 Fitnessstudio · 48.123, 9.457',tag:'wwm-test',drinkId:'11111111-1111-4111-8111-111111111111'};
+const payload={title:'Water With Me 💧',body:'Test A hat gerade 500 ml Monster Energy getrunken.',tag:'wwm-test',drinkId:'11111111-1111-4111-8111-111111111111'};
 const job={id:'job1',lease:'lease1',endpoint:'https://web.push.apple.com/abc',keys:{p256dh:receiver.getPublicKey().toString('base64url'),auth:auth.toString('base64url')},payload};
 let got=0,acks=[];
 const result=await dispatchJobs({vapid,jobs:[job]},{requestDetails:webpush.generateRequestDetails.bind(webpush),send:async(url,options)=>{assert.equal(url,job.endpoint);assert.match(options.headers.Authorization,/^vapid /);assert.equal(options.redirect,'error');const decrypted=ece.decrypt(Buffer.from(options.body),{version:'aes128gcm',privateKey:receiver,authSecret:auth});assert.deepEqual(JSON.parse(decrypted.toString()),payload);got++;return {status:201};},finish:async(...args)=>acks.push(args)});
