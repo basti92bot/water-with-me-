@@ -1,0 +1,35 @@
+do $$
+declare a uuid:=gen_random_uuid();b uuid:=gen_random_uuid();c uuid:=gen_random_uuid();drink uuid:=gen_random_uuid();plain uuid:=gen_random_uuid();invite text;ep text:='https://web.push.apple.com/location-'||gen_random_uuid();token text;result jsonb;job jsonb;
+begin
+ if has_table_privilege('authenticated','wwm_private.drinks','select') or has_function_privilege('anon','public.wwm_notification(uuid)','execute') or has_function_privilege('anon','wwm_private.notification(uuid)','execute') then raise exception 'Location privilege leak';end if;
+ insert into auth.users(id,aud,role,email,raw_user_meta_data,raw_app_meta_data,created_at,updated_at) values(a,'authenticated','authenticated','location-a-'||a||'@example.invalid','{}','{}',now(),now()),(b,'authenticated','authenticated','location-b-'||b||'@example.invalid','{}','{}',now(),now()),(c,'authenticated','authenticated','location-c-'||c||'@example.invalid','{}','{}',now(),now());
+ perform set_config('request.jwt.claim.sub',a::text,true);perform public.wwm_state();perform public.wwm_action(jsonb_build_object('action','profile','name','Location Test','goal',2500));select p.invite into invite from wwm_private.profiles p where id=a;
+ perform set_config('request.jwt.claim.sub',b::text,true);perform public.wwm_state();perform public.wwm_action(jsonb_build_object('action','friend','code',invite));
+ perform public.wwm_push_subscribe(jsonb_build_object('endpoint',ep,'keys',jsonb_build_object('p256dh',repeat('A',87),'auth',repeat('B',22))));
+ perform set_config('request.jwt.claim.sub',a::text,true);
+ perform public.wwm_action(jsonb_build_object('action','drink','id',drink,'kind','Monster Energy','amount',500,'location',jsonb_build_object('lat',48.123456,'lon',9.456789,'label',' Fitnessstudio ')));
+ if public.wwm_notification(drink)#>>'{location,lat}'<>'48.123' or public.wwm_notification(drink)#>>'{location,lon}'<>'9.457' or public.wwm_notification(drink)#>>'{location,label}'<>'Fitnessstudio' then raise exception 'Location normalization failed';end if;
+ perform public.wwm_action(jsonb_build_object('action','drink','id',plain,'kind','Kaffee','amount',250));
+ if (select location from wwm_private.drinks where id=plain) is not null then raise exception 'Location carried into another drink';end if;
+ perform public.wwm_action(jsonb_build_object('action','drink','id',drink,'kind','Monster Energy','amount',500,'location',jsonb_build_object('lat',0,'lon',0,'label','Changed')));
+ if public.wwm_notification(drink)#>>'{location,label}'<>'Fitnessstudio' or (select count(*) from wwm_private.push_jobs where drink_id=drink)<>1 then raise exception 'Duplicate overwrote location or queued twice';end if;
+ if wwm_private.location_valid('{"lat":91,"lon":0}') or wwm_private.location_valid('{"lat":0,"lon":181}') or wwm_private.location_valid('{"lat":"48","lon":9}') or wwm_private.location_valid('[]') or wwm_private.location_valid(jsonb_build_object('lat',0,'lon',0,'label',E'Injected\nbody')) or wwm_private.location_valid(jsonb_build_object('lat',0,'lon',0,'label',repeat('x',41))) then raise exception 'Invalid location accepted';end if;
+ begin perform public.wwm_action(jsonb_build_object('action','drink','id',gen_random_uuid(),'kind','Monster Energy','amount',500,'location',jsonb_build_object('lat',100,'lon',0)));raise exception 'Invalid action accepted';exception when others then if sqlerrm='Invalid action accepted' then raise;end if;end;
+ perform set_config('request.jwt.claim.sub',b::text,true);result:=public.wwm_notification(drink);
+ if result->>'kind'<>'Monster Energy' or result->>'amount'<>'500' or result#>>'{location,label}'<>'Fitnessstudio' or result?'email' then raise exception 'Friend popup failed or email leaked';end if;
+ perform set_config('request.jwt.claim.sub',c::text,true);perform public.wwm_state();
+ begin perform public.wwm_notification(drink);raise exception 'Nonfriend location visible';exception when insufficient_privilege then null;end;
+ perform set_config('request.jwt.claim.sub','',true);
+ begin perform wwm_private.notification(drink);raise exception 'Anonymous location visible';exception when insufficient_privilege then null;end;
+ perform set_config('request.jwt.claims','{"role":"service_role"}',true);select s.decrypted_secret into token from vault.decrypted_secrets s join wwm_private.push_config p on p.dispatch_secret=s.id;
+ result:=public.wwm_push_claim(token);select value into job from jsonb_array_elements(result->'jobs') where value#>>'{payload,drinkId}'=drink::text;
+ if job is null or position('500 ml Monster Energy' in job#>>'{payload,body}')=0 or position('Fitnessstudio' in job#>>'{payload,body}')=0 or position('48.123, 9.457' in job#>>'{payload,body}')=0 then raise exception 'Drink/location missing in push';end if;
+ if (select count(*) from jsonb_array_elements(result->'jobs') j where j#>>'{payload,drinkId}'=drink::text)<>1 then raise exception 'Unexpected push recipients';end if;
+ select value into job from jsonb_array_elements(result->'jobs') where value#>>'{payload,drinkId}'=plain::text;
+ if job is null or position('📍' in job#>>'{payload,body}')>0 then raise exception 'Plain drink push leaked location';end if;
+ perform set_config('request.jwt.claim.sub',b::text,true);perform public.wwm_action(jsonb_build_object('action','unfriend','id',a));
+ begin perform public.wwm_notification(drink);raise exception 'Former friend location visible';exception when insufficient_privilege then null;end;
+ perform set_config('request.jwt.claim.sub',a::text,true);perform public.wwm_action(jsonb_build_object('action','delete','id',drink));
+ if exists(select 1 from wwm_private.drinks where id=drink) or exists(select 1 from wwm_private.push_jobs where drink_id=drink) then raise exception 'Location deletion did not cascade';end if;
+end $$;
+select 'Location tests passed: opt-in per drink, rounding, normalization, validation, friend-only retrieval, safe push, idempotency, unfriend and deletion.' as result;

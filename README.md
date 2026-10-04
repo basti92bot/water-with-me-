@@ -4,9 +4,10 @@ Eigenständige React-Web-App für GitHub Pages. Supabase speichert Profile, Getr
 
 ## Funktionen
 
-- Wasser, Sprudel, Kaffee, Tee, Saft und Softdrink.
+- Sprudel, Kaffee, Tee, Saft, Softdrink und Monster Energy.
 - Eigene Monster-Energy-Sektion mit 500-ml-Dose und frei wählbarer Menge.
 - Push-Mitteilungen von verknüpften Freunden, pro Gerät aktivierbar, mit Test-Mitteilung.
+- Pop-up mit Freund, Getränk, Menge und freiwillig geteiltem Standort; Kartenlink beim Öffnen.
 - Ein-Tipp-Eintrag, eigene Mengen und Tagesziel.
 - Tagesverlauf und sieben Tage Trinkmengen.
 - Freunde per QR-Code oder Einladungscode, mit Bestätigung.
@@ -57,3 +58,13 @@ Anmelden und Konto erstellen sind getrennte Schaltflächen. Fehlende Angaben und
 ## Version 1.2
 
 Monster Energy mit 500 ml ist beim Öffnen vorausgewählt. Wasser wurde aus der Auswahl neuer Getränke entfernt. Die eigene Monster-Sektion bleibt erhalten. Bestehende Wasser-Einträge bleiben im Verlauf lesbar.
+
+## Version 1.3: Getränk und Standort im Pop-up
+
+Vor „Ich trinke!“ optional „Standort für diesen Eintrag teilen“ einschalten und den Ort benennen. Erst beim Eintragen fragt der Browser nach der Freigabe. Jede Standortabfrage ist frisch, auf zehn Sekunden begrenzt und für ein Getränk bestimmt. Nach erfolgreichem Eintragen wird die Freigabe wieder ausgeschaltet. Bei Ablehnung oder fehlendem Standort wird nichts stillschweigend gespeichert; ohne Standort lässt sich weiter eintragen. Koordinaten werden im Client und auf dem Server auf drei Nachkommastellen gerundet. Es gibt keine Hintergrundortung.
+
+Die Push-Mitteilung enthält Getränk, Menge und den freiwillig geteilten Standort. Ein Tipp öffnet das betreffende Getränk als Pop-up mit Kartenlink. Auch bei geöffneter App meldet der Service Worker neue Getränke; ohne aktivierte Push-Berechtigung dient der bestehende 30-Sekunden-Abgleich als Ersatz. In der Freundesliste öffnet „Getränk ansehen“ die letzte Aktivität. Das Erscheinungsbild von Systemmitteilungen bestimmt das Gerät. Der Kartenanbieter bekommt die Koordinaten erst, wenn der Kartenlink geöffnet wird.
+
+`backend/location/schema.sql` ergänzt den privaten Datenbereich. `wwm_notification` prüft bei jedem Abruf die Anmeldung und die aktuelle Freundschaft. Es übermittelt keine E-Mail. Nach dem Entfernen einer Freundschaft wird der Zugriff verweigert; Löschen des Getränks entfernt den Standort und wartende Push-Aufträge. Bereits zugestellte Mitteilungen können nicht zurückgerufen werden. Die Nachricht bleibt für den Transport verschlüsselt. Der Push-Link enthält ausschließlich die zufällige Getränke-ID.
+
+`backend/location/test.sql` prüft mit zurückgerollten Testdaten die Freigabe je Getränk, Koordinatenbegrenzung, Rundung, gültige Ortsnamen, idempotente Speicherung, Zugriffsschutz, Push-Inhalt, Entfernung von Freunden und Löschen. Die UI-Tests prüfen Berechtigungen ausschließlich nach Antippen, Doppel-Tipp-Schutz, abgelehnte Freigabe und Pop-up-Inhalt. Ein realer Standort- und Push-Test auf dem iPhone bleibt ein Test am Gerät.
