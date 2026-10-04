@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import {createRequire} from 'node:module';
+import vm from 'node:vm';
+import fs from 'node:fs';
+import {allowedEndpoint,dispatchJobs} from '../supabase/functions/wwm-push/dispatch.mjs';
+const require=createRequire(import.meta.url),webpush=require('web-push'),ece=createRequire(require.resolve('web-push'))('http_ece');
+for(const url of ['https://web.push.apple.com/abc','https://updates.push.services.mozilla.com/abc','https://fcm.googleapis.com/fcm/send/abc'])assert(allowedEndpoint(url));
+for(const url of ['http://web.push.apple.com/abc','https://web.push.apple.com.evil.test/abc','https://user:password@web.push.apple.com/abc','https://web.push.apple.com:444/abc','https://127.0.0.1/abc'])assert(!allowedEndpoint(url));
+const receiver=crypto.createECDH('prime256v1');receiver.generateKeys();const auth=crypto.randomBytes(16),vapid={...webpush.generateVAPIDKeys(),subject:'https://basti92bot.github.io/water-with-me-/'};
+const payload={title:'Water With Me 💧',body:'Test A hat gerade 500 ml Monster Energy getrunken.',tag:'wwm-test'};
+const job={id:'job1',lease:'lease1',endpoint:'https://web.push.apple.com/abc',keys:{p256dh:receiver.getPublicKey().toString('base64url'),auth:auth.toString('base64url')},payload};
+let got=0,acks=[];
+const result=await dispatchJobs({vapid,jobs:[job]},{requestDetails:webpush.generateRequestDetails.bind(webpush),send:async(url,options)=>{assert.equal(url,job.endpoint);assert.match(options.headers.Authorization,/^vapid /);assert.equal(options.redirect,'error');const decrypted=ece.decrypt(Buffer.from(options.body),{version:'aes128gcm',privateKey:receiver,authSecret:auth});assert.deepEqual(JSON.parse(decrypted.toString()),payload);got++;return {status:201};},finish:async(...args)=>acks.push(args)});
+assert.equal(got,1);assert.deepEqual(result,{sent:1,failed:0});assert.deepEqual(acks,[['job1','lease1',201]]);
+for(const status of [410,429,503]){acks=[];await dispatchJobs({vapid,jobs:[job]},{requestDetails:webpush.generateRequestDetails.bind(webpush),send:async()=>({status}),finish:async(...args)=>acks.push(args)});assert.equal(acks[0][2],status);}
+acks=[];await dispatchJobs({vapid,jobs:[{...job,endpoint:'https://localhost/secret'}]},{requestDetails:()=>{throw Error('SSRF');},send:()=>{throw Error('SSRF');},finish:async(...args)=>acks.push(args)});assert.equal(acks[0][2],400);
+const listeners={},shown=[],opened=[];const sw={registration:{scope:'https://basti92bot.github.io/water-with-me-/',showNotification:async(t,o)=>shown.push({t,o})},addEventListener:(type,fn)=>listeners[type]=fn,clients:{matchAll:async()=>[],openWindow:async(url)=>opened.push(url)}};
+vm.runInNewContext(fs.readFileSync(new URL('../public/sw.js',import.meta.url),'utf8'),{self:sw,URL,Response});let pending;listeners.push({data:{json:()=>payload},waitUntil:p=>pending=p});await pending;assert.equal(shown[0].o.body,payload.body);assert.equal(shown[0].o.data.url,'https://basti92bot.github.io/water-with-me-/#friends');
+listeners.notificationclick({notification:{close:()=>{},data:{url:'https://evil.invalid'}},waitUntil:p=>pending=p});await pending;assert.equal(opened[0],'https://basti92bot.github.io/water-with-me-/#friends');
+console.log('Web Push encrypted and decrypted; endpoint restrictions, delivery statuses, notifications and safe click route passed.');
