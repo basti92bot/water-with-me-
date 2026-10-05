@@ -18,7 +18,8 @@ const root=createRoot(document.getElementById('root'));
 try{
  const {default:App}=await server.ssrLoadModule('/src/water-app.tsx');const {calls}=await server.ssrLoadModule('/tests/fixtures/supabase.ts');
  await act(async()=>root.render(React.createElement(App,{userId:'test-user'})));
- assert.equal(document.querySelector('button.big-drink').getAttribute('aria-label'),'500 Milliliter Monster Energy eintragen');assert(![...document.querySelectorAll('.drink-option')].some(e=>e.textContent==='Wasser'));
+ assert.equal(document.querySelector('button.big-drink').getAttribute('aria-label'),'500 Milliliter Wasser eintragen');assert([...document.querySelectorAll('.drink-option')].some(e=>e.textContent==='Wasser'));
+ await act(async()=>document.querySelector('button.big-drink').click());assert(calls.some(c=>c.name==='wwm_action'&&c.args.payload.kind==='Wasser'&&c.args.payload.amount===500));
  const monster=document.querySelector('section[aria-label="Monster Energy"]');assert(monster);const choice=monster.querySelector('button');await act(async()=>choice.click());assert.equal(choice.getAttribute('aria-pressed'),'true');const drink=document.querySelector('button.big-drink');assert.equal(drink.getAttribute('aria-label'),'500 Milliliter Monster Energy eintragen');await act(async()=>drink.click());assert(calls.some(c=>c.name==='wwm_action'&&c.args.payload.kind==='Monster Energy'&&c.args.payload.amount===500));
  assert(!document.querySelector('.location-sharing'));assert(!('location' in calls.find(c=>c.name==='wwm_action'&&c.args.payload.action==='drink').args.payload));
  await act(async()=>swListeners.message({data:{type:'wwm-drink',drinkId:'11111111-1111-4111-8111-111111111111'}}));assert.match(document.querySelector('[role="dialog"]').textContent,/Testfreund trinkt/);await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Schließen').click());
