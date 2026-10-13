@@ -7,7 +7,8 @@ const dom=new JSDOM('<html><body><div id="root"></div></body></html>',{url:'http
 const win=dom.window;
 for(const [name,value] of Object.entries({window:win,document:win.document,navigator:win.navigator,localStorage:win.localStorage,HTMLElement:win.HTMLElement,Element:win.Element,Node:win.Node,CustomEvent:win.CustomEvent,MutationObserver:win.MutationObserver,getComputedStyle:win.getComputedStyle.bind(win),requestAnimationFrame:cb=>setTimeout(cb,0),cancelAnimationFrame:clearTimeout,IS_REACT_ACT_ENVIRONMENT:true}))Object.defineProperty(globalThis,name,{value,writable:true,configurable:true});
 for(const name of ['HTMLFormElement','HTMLInputElement','HTMLButtonElement','HTMLSelectElement','HTMLTextAreaElement','Event','KeyboardEvent','MouseEvent','PointerEvent','FocusEvent','DocumentFragment','NodeFilter'])if(win[name])Object.defineProperty(globalThis,name,{value:win[name],writable:true,configurable:true});
-win.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){}});Object.defineProperty(win,'isSecureContext',{value:true});
+let mobileViewport=false;const responsiveListeners=new Set();
+win.matchMedia=query=>({get matches(){return mobileViewport&&query==='(max-width: 760px)';},addEventListener(type,listener){if(type==='change')responsiveListeners.add(listener);},removeEventListener(type,listener){if(type==='change')responsiveListeners.delete(listener);},addListener(listener){responsiveListeners.add(listener);},removeListener(listener){responsiveListeners.delete(listener);}});Object.defineProperty(win,'isSecureContext',{value:true});
 Object.defineProperty(win.navigator,'geolocation',{value:{getCurrentPosition:()=>{throw Error('Location must not be requested');}}});
 let sub=null,asked=0;const subscription={endpoint:'https://web.push.apple.com/test-device',toJSON:()=>({endpoint:'https://web.push.apple.com/test-device',keys:{p256dh:'A'.repeat(87),auth:'B'.repeat(22)}}),unsubscribe:async()=>{sub=null;return true;}};
 const swListeners={};
@@ -18,6 +19,12 @@ const root=createRoot(document.getElementById('root'));
 try{
  const {default:App}=await server.ssrLoadModule('/src/water-app.tsx');const {calls}=await server.ssrLoadModule('/tests/fixtures/supabase.ts');
  await act(async()=>root.render(React.createElement(App,{userId:'test-user'})));
+ const nav=document.querySelector('.app-nav');assert(nav&&document.querySelector('.app-tabs').contains(nav));
+ await act(async()=>{mobileViewport=true;for(const listener of responsiveListeners)listener({matches:true});});
+ assert.equal(document.querySelector('.app-nav').parentElement,document.body,'Mobile tab bar must be portaled outside the scrolling layout');
+ await act(async()=>{mobileViewport=false;for(const listener of responsiveListeners)listener({matches:false});});
+ assert(document.querySelector('.app-tabs').contains(document.querySelector('.app-nav')));
+ console.log('Navigation passed: iPhone mobile bar at document.body level, desktop bar in content.');
  assert.equal(document.querySelector('button.big-drink').getAttribute('aria-label'),'500 Milliliter Wasser eintragen');assert([...document.querySelectorAll('.drink-option')].some(e=>e.textContent==='Wasser'));
  await act(async()=>document.querySelector('button.big-drink').click());assert(calls.some(c=>c.name==='wwm_action'&&c.args.payload.kind==='Wasser'&&c.args.payload.amount===500));
  const monster=document.querySelector('section[aria-label="Monster Energy"]');assert(monster);const choice=monster.querySelector('button');await act(async()=>choice.click());assert.equal(choice.getAttribute('aria-pressed'),'true');const drink=document.querySelector('button.big-drink');assert.equal(drink.getAttribute('aria-label'),'500 Milliliter Monster Energy eintragen');await act(async()=>drink.click());assert(calls.some(c=>c.name==='wwm_action'&&c.args.payload.kind==='Monster Energy'&&c.args.payload.amount===500));
